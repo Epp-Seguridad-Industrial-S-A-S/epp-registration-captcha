@@ -1,0 +1,16 @@
+### Python artifacts
+*.pyc
+__pycache__/
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.tox/
+.venv/
+venv/
+
+### OS / editor
+.DS_Store
+*.swp

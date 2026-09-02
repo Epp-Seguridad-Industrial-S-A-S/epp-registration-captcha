@@ -1,0 +1,4 @@
+-r common.in
+
+pytest
+pytest-django

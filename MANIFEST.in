@@ -1,0 +1,6 @@
+include README.md
+include CHANGELOG.rst
+include version.py
+include requirements/*.in
+recursive-include epp_registration_captcha *.py
+prune tests
