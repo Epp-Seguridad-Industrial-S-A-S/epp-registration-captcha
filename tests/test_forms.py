@@ -1,13 +1,16 @@
-"""Unit tests for RegistrationCaptchaForm. siteverify is always mocked."""
+"""Unit tests for RegistrationCaptchaForm. siteverify and DNS lookups are always mocked."""
 
 from unittest import mock
 
+import dns.exception
+import dns.resolver
 import pytest
 import requests
 
 from epp_registration_captcha.forms import RegistrationCaptchaForm
 
 TARGET = "epp_registration_captcha.forms.requests.post"
+DNS_TARGET = "epp_registration_captcha.forms.dns.resolver.resolve"
 
 
 def _mock_response(payload):
@@ -111,3 +114,95 @@ def test_save_satisfies_do_create_account_contract():
     custom_model = form.save(commit=False)
     custom_model.user = object()  # do_create_account assigns the freshly created User here
     custom_model.save()  # must not raise
+
+
+def _mock_answer(count=1):
+    return [mock.Mock()] * count
+
+
+def test_email_with_mx_record_passes(settings):
+    settings.EPP_ENABLE_REGISTRATION_RECAPTCHA = False
+    with mock.patch(DNS_TARGET, return_value=_mock_answer()) as resolve:
+        form = RegistrationCaptchaForm(data={"email": "student@example.com"})
+        assert form.is_valid(), form.errors
+    resolve.assert_called_once_with("example.com", "MX", lifetime=mock.ANY)
+
+
+def test_email_without_mx_falls_back_to_a_record(settings):
+    settings.EPP_ENABLE_REGISTRATION_RECAPTCHA = False
+
+    def side_effect(domain, record_type, lifetime):  # noqa: ARG001
+        if record_type == "MX":
+            raise dns.resolver.NoAnswer()
+        return _mock_answer()
+
+    with mock.patch(DNS_TARGET, side_effect=side_effect) as resolve:
+        form = RegistrationCaptchaForm(data={"email": "student@example.com"})
+        assert form.is_valid(), form.errors
+    assert resolve.call_count == 2
+
+
+def test_email_domain_does_not_exist_is_invalid(settings):
+    settings.EPP_ENABLE_REGISTRATION_RECAPTCHA = False
+    with mock.patch(DNS_TARGET, side_effect=dns.resolver.NXDOMAIN()):
+        form = RegistrationCaptchaForm(data={"email": "student@asdasdqwe123nonexistent.com"})
+        assert not form.is_valid()
+        assert "email" in form.errors
+
+
+def test_email_domain_with_no_mx_and_no_a_is_invalid(settings):
+    settings.EPP_ENABLE_REGISTRATION_RECAPTCHA = False
+
+    def side_effect(domain, record_type, lifetime):  # noqa: ARG001
+        if record_type == "MX":
+            raise dns.resolver.NoAnswer()
+        raise dns.resolver.NXDOMAIN()
+
+    with mock.patch(DNS_TARGET, side_effect=side_effect):
+        form = RegistrationCaptchaForm(data={"email": "student@example.com"})
+        assert not form.is_valid()
+        assert "email" in form.errors
+
+
+def test_dns_timeout_fails_open(settings):
+    settings.EPP_ENABLE_REGISTRATION_RECAPTCHA = False
+    with mock.patch(DNS_TARGET, side_effect=dns.exception.Timeout()):
+        form = RegistrationCaptchaForm(data={"email": "student@example.com"})
+        assert form.is_valid(), form.errors
+
+
+def test_dns_no_nameservers_fails_open(settings):
+    settings.EPP_ENABLE_REGISTRATION_RECAPTCHA = False
+    with mock.patch(DNS_TARGET, side_effect=dns.resolver.NoNameservers()):
+        form = RegistrationCaptchaForm(data={"email": "student@example.com"})
+        assert form.is_valid(), form.errors
+
+
+def test_email_domain_check_kill_switch(settings):
+    settings.EPP_ENABLE_REGISTRATION_RECAPTCHA = False
+    settings.EPP_ENABLE_EMAIL_DOMAIN_CHECK = False
+    with mock.patch(DNS_TARGET) as resolve:
+        form = RegistrationCaptchaForm(data={"email": "student@asdasdqwe123nonexistent.com"})
+        assert form.is_valid(), form.errors
+    resolve.assert_not_called()
+
+
+def test_malformed_email_value_skips_dns_lookup(settings):
+    settings.EPP_ENABLE_REGISTRATION_RECAPTCHA = False
+    with mock.patch(DNS_TARGET) as resolve:
+        form = RegistrationCaptchaForm(data={"email": "not-an-email"})
+        # Django's own EmailField format validation rejects it; we never reach clean_email's
+        # DNS check for a value with no "@".
+        assert not form.is_valid()
+    resolve.assert_not_called()
+
+
+def test_save_contract_still_holds_with_email_field(settings):
+    settings.EPP_ENABLE_REGISTRATION_RECAPTCHA = False
+    with mock.patch(DNS_TARGET, return_value=_mock_answer()):
+        form = RegistrationCaptchaForm(data={"email": "student@example.com"})
+        assert form.is_valid(), form.errors
+
+    custom_model = form.save(commit=False)
+    custom_model.user = object()
+    custom_model.save()

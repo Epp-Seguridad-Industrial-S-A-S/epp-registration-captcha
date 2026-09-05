@@ -1,6 +1,7 @@
-# Runtime dependencies. Both are already part of edx-platform, so pins are intentionally loose
-# to avoid conflicting with the platform's own resolution.
+# Runtime dependencies. Most are already part of edx-platform, so pins are intentionally
+# loose to avoid conflicting with the platform's own resolution.
 
 Django            # provides django.forms / settings / ValidationError
 requests          # calls Google's reCAPTCHA siteverify endpoint
 django-crum       # resolves the client IP from the current request (optional at runtime)
+dnspython         # MX/A lookups for the registration email domain check
