@@ -5,4 +5,4 @@ The public entry point is :class:`epp_registration_captcha.forms.RegistrationCap
 wired into edx-platform through ``settings.REGISTRATION_EXTENSION_FORM``.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

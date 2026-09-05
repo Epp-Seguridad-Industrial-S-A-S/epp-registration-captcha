@@ -91,3 +91,23 @@ def test_forwarded_for_ip_is_first_hop(header, expected):
         form = RegistrationCaptchaForm(data={"recaptcha_token": "good-token"})
         assert form.is_valid(), form.errors
     assert post.call_args.kwargs["data"]["remoteip"] == expected
+
+
+def test_save_satisfies_do_create_account_contract():
+    """
+    Reproduces common.djangoapps.student.helpers.do_create_account's usage verbatim:
+
+        custom_model = custom_form.save(commit=False)
+        custom_model.user = user
+        custom_model.save()
+
+    A plain forms.Form has no .save() at all, which is exactly what broke registration
+    in production (AttributeError: 'RegistrationCaptchaForm' object has no attribute 'save').
+    """
+    with mock.patch(TARGET, return_value=_mock_response({"success": True})):
+        form = RegistrationCaptchaForm(data={"recaptcha_token": "good-token"})
+        assert form.is_valid(), form.errors
+
+    custom_model = form.save(commit=False)
+    custom_model.user = object()  # do_create_account assigns the freshly created User here
+    custom_model.save()  # must not raise

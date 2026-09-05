@@ -14,6 +14,15 @@ body) and calls ``is_valid()`` from ``do_create_account``. Because ``recaptcha_t
 is ``required=False`` and hidden, it is *not* advertised in
 ``GET /api/user/v1/account/registration/`` but it *is* still validated on POST.
 A failure surfaces to the MFE as ``HTTP 400 {"recaptcha_token": [{"user_message": ...}]}``.
+
+On success, ``common.djangoapps.student.helpers.do_create_account`` unconditionally does::
+
+    custom_model = custom_form.save(commit=False)
+    custom_model.user = user
+    custom_model.save()
+
+so ``REGISTRATION_EXTENSION_FORM`` classes must implement that ``save(commit=False)``
+contract even when there is nothing to persist -- see ``save()`` below.
 """
 
 import logging
@@ -52,6 +61,17 @@ def _client_ip():
     return request.META.get("REMOTE_ADDR")
 
 
+class _NothingToPersist:
+    """Stand-in "model" for do_create_account's custom_form.save(commit=False) contract.
+
+    We only need the token for verification, not storage, so `.user` is a plain
+    attribute assignment and `.save()` is a no-op.
+    """
+
+    def save(self, *args, **kwargs):
+        pass
+
+
 class RegistrationCaptchaForm(forms.Form):
     """Validate the reCAPTCHA token injected by the forked authn MFE as ``recaptcha_token``."""
 
@@ -60,6 +80,9 @@ class RegistrationCaptchaForm(forms.Form):
         widget=forms.HiddenInput,
         label=_("Captcha"),
     )
+
+    def save(self, commit=True):  # noqa: ARG002 - required by do_create_account's custom_form contract
+        return _NothingToPersist()
 
     def clean_recaptcha_token(self):
         if not _feature_enabled():
